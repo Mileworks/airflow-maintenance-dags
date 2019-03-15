@@ -29,7 +29,7 @@ START_DATE = now() - timedelta(minutes=1)
 SCHEDULE_INTERVAL = "@daily"            # How often to Run. @daily - Once a day at Midnight (UTC)
 DAG_OWNER_NAME = "operations"           # Who is listed as the owner of this DAG in the Airflow Web Server
 ALERT_EMAIL_ADDRESSES = []              # List of email address to send email alerts to if this job fails
-DEFAULT_MAX_DB_ENTRY_AGE_IN_DAYS = int(Variable.get("max_db_entry_age_in_days", 30)) # Length to retain the log files if not already provided in the conf. If this is set to 30, the job will remove those files that are 30 days old or older.
+DEFAULT_MAX_DB_ENTRY_AGE_IN_DAYS = int(Variable.get("max_db_entry_age_in_days", 3)) # Length to retain the log files if not already provided in the conf. If this is set to 30, the job will remove those files that are 30 days old or older.
 ENABLE_DELETE = True                    # Whether the job should delete the db entries or not. Included if you want to temporarily avoid deleting the db entries.
 DATABASE_OBJECTS = [                    # List of all the objects that will be deleted. Comment out the DB objects you want to skip.
     {"airflow_db_model": DagRun, "age_check_column": DagRun.execution_date, "dag_id": DagRun.dag_id, "keep_last_run": True},
@@ -79,7 +79,8 @@ def print_configuration_function(**context):
     logging.info("")
 
     logging.info("Setting max_execution_date to XCom for Downstream Processes")
-    context["ti"].xcom_push(key="max_date", value=max_date)
+    # context["ti"].xcom_push(key="max_date", value=max_date.strftime("%Y-%m-%d %H:%M:%S.%f"))
+    context["ti"].xcom_push(key="max_date", value=max_date.strftime("%Y-%m-%d %H:%M:%S.%f"))
 
 print_configuration = PythonOperator(
     task_id='print_configuration',
@@ -92,6 +93,9 @@ def cleanup_function(**context):
 
     logging.info("Retrieving max_execution_date from XCom")
     max_date = context["ti"].xcom_pull(task_ids=print_configuration.task_id, key="max_date")
+    max_date_tmp = datetime.strptime(max_date, "%Y-%m-%d %H:%M:%S.%f")
+    max_date_tmps =  [int(i) for i in max_date_tmp.strftime('%Y,%m,%d,%H,%M,%S').split(',')]
+    max_date = timezone.datetime(max_date_tmps[0],max_date_tmps[1],max_date_tmps[2],max_date_tmps[3],max_date_tmps[4],max_date_tmps[5])
 
     airflow_db_model = context["params"].get("airflow_db_model")
     age_check_column = context["params"].get("age_check_column")
@@ -115,11 +119,11 @@ def cleanup_function(**context):
             age_check_column.notin_(session.query(func.max(age_check_column)).group_by(
                 dag_id)), and_(age_check_column <= max_date))
     else:
-        query = query.filter(age_check_column <= max_date,)
+        query = query.filter(age_check_column <= max_date)
 
     entries_to_delete = query.all()
 
-    logging.info("Query : " +  str(query));
+    logging.info("Query : " + str(query))
     logging.info("Process will be Deleting the following " + str(airflow_db_model.__name__) + "(s):")
     for entry in entries_to_delete:
         logging.info("\tEntry: " + str(entry) + ", Date: " + str(entry.__dict__[str(age_check_column).split(".")[1]]))
