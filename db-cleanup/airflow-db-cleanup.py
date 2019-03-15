@@ -125,6 +125,7 @@ def cleanup_function(**context):
 
     logging.info("Query : " + str(query))
     logging.info("Process will be Deleting the following " + str(airflow_db_model.__name__) + "(s):")
+    
     for entry in entries_to_delete:
         logging.info("\tEntry: " + str(entry) + ", Date: " + str(entry.__dict__[str(age_check_column).split(".")[1]]))
 
